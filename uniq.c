@@ -4,6 +4,11 @@
 
 #define BUFSIZE 3
 
+uint count = 0;
+uint duplicate = 0;
+uint ignore = 0;
+int c = 0;
+
 struct linebuffer {
 	uint size;		// Allocated
 	uint length;	// used
@@ -11,8 +16,8 @@ struct linebuffer {
 };
 
 char buf[BUFSIZE];
-struct linebuffer prev_line;
-struct linebuffer line;
+struct linebuffer prev_line;	// On stack, keeps track of previous line
+struct linebuffer line;			// On stack, keeps track of current line
 
 // C str functions
 char* strncpy(char*s, char*t, int n) {
@@ -38,13 +43,42 @@ char* safestrcpy(char* s, char* t, int n) {
 	return os;
 }
 
-int strncmp(const char*p, const char*q, uint n) {
-	while(n > 0 && *p && *p == *q)
+char tolower(const char* c) {
+	if (*c >= 65 && *c <= 90) return *c+32;
+	else if (*c >=97 && *c <=122) return *c;
+	else return *c;
+}
+
+/* A simple char compare function with case-sentive option */
+int chrcmp(const char* c1, const char*c2, uint cs) {
+	if (cs == 1) {return *c1 - *c2; printf(1, "Case-sensitive\n");}
+	else if (*c1 == *c2) return 0;
+	else return tolower(c1) - tolower(c2);
+}
+			
+
+int strncmp(const char*p, const char*q, uint n, uint cs) {
+	while(n > 0 && *p && chrcmp(p, q, cs) == 0)
 		n--, p++, q++;
 	if (n== 0)
 		return 0;
 	return (uchar)*p - (uchar)*q;
 }
+
+// A simple print number with controlled space function
+void _printnum(int num, int space){
+	int max, i;
+	for (max = 1; num >= max; space --) max *= 10;
+	if (space < 0) {
+		printf(2, "Not enought space for printing\n");
+		exit();
+	}
+	else {
+		for (i = 0; i < space; i++) write(1, " ", 1);
+		printf(1, "%d ", num);
+	}
+}
+
 
 // linebuffer function
 void init_linebuffer (struct linebuffer *linebuffer) {
@@ -53,12 +87,18 @@ void init_linebuffer (struct linebuffer *linebuffer) {
 	linebuffer->buffer = malloc(BUFSIZE);
 }
 
-void linebuffer_print(struct linebuffer *linebuffer) {
-	//printf(1, linebuffer->buffer, linebuffer->length);
+void free_linebuffer(struct linebuffer *linebuffer) {
+	if (linebuffer->buffer) {
+		free((void*)linebuffer->buffer);
+	}
+}
+
+void print_linebuffer(struct linebuffer *linebuffer) {
 	int i;
-	//write(1, "---", 3);
-	for (i =  0; i < linebuffer->length; i++ ) write(1, linebuffer->buffer+i, 1);
-	//write(1, "\n", 1);
+	if (count) _printnum(c, 4); // print occurrence if with the option
+	if (!duplicate || c > 1)
+		for (i =  0; i < linebuffer->length; i++ ) write(1, linebuffer->buffer+i, 1);
+	c = 1;
 }
 
 void double_linebuffer (struct linebuffer *linebuffer) {
@@ -71,7 +111,7 @@ void double_linebuffer (struct linebuffer *linebuffer) {
 }
 
 void append_to_linebuffer(struct linebuffer *linebuffer, char* str, int len) {
-	// Make sure enough space
+	// Make sure linebuffer has enough space
 	while(linebuffer->size <=linebuffer->length + len)  {
 		double_linebuffer(linebuffer);
 	}
@@ -79,10 +119,10 @@ void append_to_linebuffer(struct linebuffer *linebuffer, char* str, int len) {
 	linebuffer->length += len;
 }
 
-int linebuffer_cmp(struct linebuffer *linebuffer1, struct linebuffer *linebuffer2 ) {
+int cmp_linebuffer(struct linebuffer *linebuffer1, struct linebuffer *linebuffer2 ) {
 	if (linebuffer1->length != linebuffer2->length) 
 		return linebuffer1->length - linebuffer2->length;
-	return strncmp(linebuffer1->buffer, linebuffer2->buffer, linebuffer1->length);
+	return strncmp(linebuffer1->buffer, linebuffer2->buffer, linebuffer1->length, (ignore==0));
 }
 
 
@@ -91,16 +131,15 @@ void uniq(int fd) {
 	int i, n;
 	int line_start; //tracks the current line
 	int line_size;
-	int line_ind;
-	int first_line = 1;
-	line_start = line_size = line_ind = 0;
+	int first_line = 1; //if the nextline is the first line
+	line_start = line_size = 0;
+	c = 1;
 	// Init linebuffers
 	init_linebuffer(&prev_line);
 	init_linebuffer(&line);
 
 	while((n = read(fd, buf, sizeof(buf)-1)) > 0) {
 		buf[sizeof(buf)-1] = 0;
-		//printf(2, "read buf %s\n", buf);
 		line_start = 0;
 		line_size = 0;
 		for (i = 0; i < n; i++ ) {
@@ -109,56 +148,73 @@ void uniq(int fd) {
 			}
 			line_size++;
 			if (buf[i] == '\n' || buf[i] == '\r') {// hit new line
-				//printf(2, "CurrentLine:%s\n", line.buffer);
 				append_to_linebuffer(&line, buf + line_start, i -line_start+1);
-				//printf(2, "CurrentLine:%s\n", line.buffer);
-				//printf(2, "PrevLine:%s\n", prev_line.buffer);
-				if (linebuffer_cmp(&line, &prev_line) != 0 ) {//uniq line
-					//printf(2, "Uniq line\n");
+				if (cmp_linebuffer(&line, &prev_line) != 0 ) {//uniq line
 					if (first_line == 0) {
-						linebuffer_print(&prev_line);
+						print_linebuffer(&prev_line); //Postpone print
 					} else {
 						first_line = 0;
 					}
-					free((void*)prev_line.buffer);
-					prev_line.size = line.size;
-					prev_line.length = line.length;
-					prev_line.buffer = line.buffer;
-					init_linebuffer(&line);
+					free_linebuffer(&prev_line);
+					prev_line = line; // shollow copy
+					init_linebuffer(&line); // reinit current linebuffer
 				}
-				else {
-					//printf(2, "Hit same line\n");
+				else { // Line is the same as prev_line
+					free_linebuffer(&line);
 					init_linebuffer(&line);
+					c++;
 				}
 				line_size = 0;
 				if (i == n-1) continue;
 
 			}
 			if (i == n-1) {// last char of the line, copy remaining buf over to line
-				//printf(2, "OldLine:%s\n", line.buffer);
 				append_to_linebuffer(&line, buf + line_start, sizeof(buf) - line_start -1);
-				//printf(2, "OldLine:%s\n", line.buffer);
 			}
 
 		}
 		
 	}
-	//printf(2, "LastLine\n");
-	linebuffer_print(&prev_line);
+	// The end. Just print whatever in prev_line
+	print_linebuffer(&prev_line);
 }
 
+void
+usage() {
+	printf(2, "Usage: uniq [-c|-d|-i] [INPUT]\n");
+}
 
 int
 main(int argc, char *argv[]) {
 	int fd = 0;
-	if (argc == 2) {
-		fd = open(argv[1], 0);
-		uniq(fd);
-		close(fd);
+	int ind;
+	for (ind = 1; ind < argc; ind++) {
+		if (strlen(argv[ind]) >= 2 && argv[ind][0] == '-') {
+			switch(argv[ind][1]){
+			case 'c':
+				count = 1;
+				break;
+			case 'd':
+				duplicate = 1;
+				break;
+			case 'i':
+				ignore = 1;
+				break;
+			default:
+				printf(2, "Unknow option\n");
+				usage();
+				exit();
+				break;
+			}
+		}
+		else {
+			fd = open(argv[ind], 0);
+			break;
+		}
 	}
-	else {
-		uniq(0);
-		close(0);
+	uniq(fd);
+	if (fd) {
+		close(fd);
 	}
 	exit();
 }
