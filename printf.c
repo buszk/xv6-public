@@ -9,7 +9,7 @@ putc(int fd, char c)
 }
 
 static void
-printint(int fd, int xx, int base, int sgn)
+printint(int fd, int xx, int base, int sgn, int space)
 {
   static char digits[] = "0123456789ABCDEF";
   char buf[16];
@@ -30,6 +30,9 @@ printint(int fd, int xx, int base, int sgn)
   }while((x /= base) != 0);
   if(neg)
     buf[i++] = '-';
+	
+	while(--space >=i)
+		putc(fd, ' ');
 
   while(--i >= 0)
     putc(fd, buf[i]);
@@ -40,7 +43,7 @@ void
 printf(int fd, char *fmt, ...)
 {
   char *s;
-  int c, i, state;
+  int c, i, state, space;
   uint *ap;
 
   state = 0;
@@ -54,11 +57,16 @@ printf(int fd, char *fmt, ...)
         putc(fd, c);
       }
     } else if(state == '%'){
-      if(c == 'd'){
-        printint(fd, *ap, 10, 1);
+      space = 0;
+      if(c >= '0' && c <= '9') {
+        space = c-'0';
+        state = 'n';
+        continue;
+      } else if(c == 'd'){
+        printint(fd, *ap, 10, 1, space);
         ap++;
       } else if(c == 'x' || c == 'p'){
-        printint(fd, *ap, 16, 0);
+        printint(fd, *ap, 16, 0, space);
         ap++;
       } else if(c == 's'){
         s = (char*)*ap;
@@ -77,6 +85,16 @@ printf(int fd, char *fmt, ...)
       } else {
         // Unknown % sequence.  Print it to draw attention.
         putc(fd, '%');
+        putc(fd, c);
+      }
+      state = 0;
+    } else if(state == 'n'){
+      if (c == 'd'){
+        printint(fd, *ap, 10, 1, space);
+      } else {
+        // Unknow n sequence. Print it to draw attention.
+        putc(fd, '%');
+        putc(fd, '0'+space);
         putc(fd, c);
       }
       state = 0;

@@ -2,7 +2,7 @@
 #include "stat.h"
 #include "user.h"
 
-#define BUFSIZE 3
+#define BUFSIZE 16
 
 uint count = 0;
 uint duplicate = 0;
@@ -65,7 +65,10 @@ int strncmp(const char*p, const char*q, uint n, uint cs) {
 	return (uchar)*p - (uchar)*q;
 }
 
+
 // A simple print number with controlled space function
+// removed because of reimplemenation of printf
+/*
 void _printnum(int num, int space){
 	int max, i;
 	for (max = 1; num >= max; space --) max *= 10;
@@ -78,6 +81,7 @@ void _printnum(int num, int space){
 		printf(1, "%d ", num);
 	}
 }
+*/
 
 
 // linebuffer function
@@ -95,7 +99,7 @@ void free_linebuffer(struct linebuffer *linebuffer) {
 
 void print_linebuffer(struct linebuffer *linebuffer) {
 	int i;
-	if (count) _printnum(c, 4); // print occurrence if with the option
+	if (count) printf(1, "%5d ", c); // print occurrence if with the option
 	if (!duplicate || c > 1)
 		for (i =  0; i < linebuffer->length; i++ ) write(1, linebuffer->buffer+i, 1);
 	c = 1;
