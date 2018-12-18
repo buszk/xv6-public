@@ -50,6 +50,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->tickets = 20;
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -102,6 +103,7 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+  p->tickets = 20; // Set lottery tickets to default
   p->state = RUNNABLE;
 }
 
@@ -160,6 +162,8 @@ fork(void)
   safestrcpy(np->name, proc->name, sizeof(proc->name));
  
   pid = np->pid;
+  
+  np->tickets = 20; // Set number of tickets to default value at fork
 
   // lock to force the compiler to emit the np->state write last.
   acquire(&ptable.lock);
@@ -270,6 +274,18 @@ scheduler(void)
 {
   struct proc *p;
   int foundproc = 1;
+  long ticketsum = 0;
+  long rand = 0;
+  struct proc *pp;
+
+  // Get total tickets
+  ticketsum = 0;
+  for(pp = ptable.proc; pp < &ptable.proc[NPROC]; pp++){
+    if(pp->state == RUNNABLE) 
+      ticketsum += pp->tickets;
+  }
+  if (ticketsum > 0)
+    rand = random_at_most(ticketsum-1);
 
   for(;;){
     // Enable interrupts on this processor.
@@ -280,9 +296,14 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+	
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
+      if(rand >= p->tickets) {
+        rand -= p->tickets;
+        continue;
+      }
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
@@ -293,6 +314,14 @@ scheduler(void)
       p->state = RUNNING;
       swtch(&cpu->scheduler, proc->context);
       switchkvm();
+      // Get total tickets
+      ticketsum = 0;
+      for(pp = ptable.proc; pp < &ptable.proc[NPROC]; pp++){
+        if(pp->state == RUNNABLE) 
+          ticketsum += pp->tickets;
+      }
+      if (ticketsum > 0)
+      rand = random_at_most(ticketsum-1);
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.

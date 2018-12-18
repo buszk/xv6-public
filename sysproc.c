@@ -98,3 +98,15 @@ sys_gettime(void) {
   cmostime(d);
   return 0;
 }
+
+int
+sys_settickets(void) {
+	int tickets;
+	if (argint(0, &tickets) < 0)
+		return -1;
+	//cprintf("Old tickets:     %d\n", proc->tickets);
+	proc->tickets = tickets;
+	//cprintf("Current tickets: %d\n", proc->tickets);
+	return 0;
+}
+	
